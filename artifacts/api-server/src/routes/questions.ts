@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import { ReplitConnectors } from "@replit/connectors-sdk";
 import { GetQuestionsResponse } from "@workspace/api-zod";
 
 type XUser = {
@@ -33,7 +32,6 @@ class XApiError extends Error {
 }
 
 const router: IRouter = Router();
-const connectors = new ReplitConnectors();
 const searchQuery =
   "lang:en (Kenya OR Nairobi OR Mombasa OR Kisumu OR Nakuru OR Eldoret) -is:retweet -is:reply -has:links";
 const cacheTtlMs = 5 * 60 * 1000;
@@ -108,7 +106,17 @@ router.get("/questions", async (req, res): Promise<void> => {
   });
 
   try {
-    const response = await connectors.proxy("x", `/2/tweets/search/recent?${params.toString()}`);
+    const bearerToken = process.env.X_BEARER_TOKEN?.trim();
+    if (!bearerToken) {
+      throw new XApiError(503, "X API bearer token is not configured.");
+    }
+
+    const response = await fetch(`https://api.x.com/2/tweets/search/recent?${params.toString()}`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${bearerToken}`,
+      },
+    });
     const payload = (await response.json()) as XSearchResponse;
     if (!response.ok) {
       throw new XApiError(response.status, "X returned an unsuccessful response.");
