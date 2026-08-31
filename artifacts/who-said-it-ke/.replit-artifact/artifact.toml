@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Who Said It? Kenya"
+description = "A fast, playful Kenyan political quote guessing game with daily challenges, streaks, leaderboards, and spoiler-free sharing."
+version = "1.0.0"
+id = "artifacts/who-said-it-ke"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18734
+
+[services.development]
+run = "pnpm --filter @workspace/who-said-it-ke run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/who-said-it-ke", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/who-said-it-ke/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18734"
+BASE_PATH = "/"

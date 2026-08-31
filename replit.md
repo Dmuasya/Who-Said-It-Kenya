@@ -1,6 +1,6 @@
-# [Project name]
+# Who Said It? Kenya
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A mobile-first fictional quote guessing game with five-question daily runs, speed scoring, streaks, leaderboards, profiles, and spoiler-free friend challenges.
 
 ## Run & Operate
 
@@ -22,15 +22,24 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/who-said-it-ke/src/App.tsx` — game state, local demo question pool, scoring, persistence, and app views
+- `artifacts/who-said-it-ke/src/index.css` — visual theme, responsive layout helpers, focus states, and motion
+- `artifacts/who-said-it-ke/.replit-artifact/artifact.toml` — artifact routing and managed web workflow
+- `artifacts/api-server` — shared API scaffold; not required by the local-only game MVP
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The first release is intentionally local-only: localStorage makes the core loop instant and keeps demo play usable without accounts or a database.
+- All quotes and politicians are explicitly fictional demo data to avoid presenting fabricated claims about real people.
+- `getDailyChallenge(date)` provides a deterministic date-based question selection seam for a future verified content source.
+- Browser Web Share is preferred, with clipboard, WhatsApp, and X fallbacks for friend sharing.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Players start a daily five-question classic run after an energetic countdown.
+- Each question has four shuffled options, a 10-second timer, speed-based scoring, one hint, feedback, and combo tracking.
+- Results include score, rank, streak, performance details, and a spoiler-free share/challenge flow.
+- Home, leaderboard period tabs, profile editing, achievements, sound preference, and local score persistence are included.
 
 ## User preferences
 
