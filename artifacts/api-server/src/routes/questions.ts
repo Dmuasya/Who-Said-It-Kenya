@@ -134,6 +134,10 @@ router.get("/questions", async (req, res): Promise<void> => {
     const message =
       status === 402
         ? "X API credits are currently depleted. Demo mode is available while they reset."
+        : status === 401
+          ? "X rejected X_BEARER_TOKEN. Replace it with the X API v2 Bearer Token from your developer project."
+          : status === 403
+            ? "X denied access for this API project. Check that recent search is enabled for the project."
         : "Live X posts are temporarily unavailable. Demo mode is available.";
     req.log.warn({ status, err: error }, "Unable to build live X question round");
     res.status(503).json({ error: message });
