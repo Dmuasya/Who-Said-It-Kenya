@@ -31,7 +31,7 @@ A mobile-first fictional quote guessing game with five-question daily runs, spee
 ## Architecture decisions
 
 - xAI's Grok API is called only from the API server with the `XAI_API_KEY` Replit Secret (with the existing `X_BEARER_TOKEN` secret accepted as a compatibility alias); the browser never receives credentials.
-- Live rounds use xAI's X Search tool to retrieve public post text and links back to the original X post; the local question pool is an explicitly labeled fallback for xAI outages, credit limits, or missing credentials.
+- Live rounds use xAI's X Search tool to prioritize popular public posts from recognizable Kenyan voices and link back to the original X post; the local question pool is an explicitly labeled fallback for xAI outages, credit limits, or missing credentials.
 - `getDailyChallenge(date)` remains a deterministic fallback so the core loop stays playable without accounts or a database.
 - Browser Web Share is preferred, with clipboard, WhatsApp, and X fallbacks for friend sharing.
 

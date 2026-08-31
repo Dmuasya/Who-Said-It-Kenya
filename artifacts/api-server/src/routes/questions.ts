@@ -47,7 +47,7 @@ class XApiError extends Error {
 
 const router: IRouter = Router();
 const searchQuery =
-  "Search recent public posts on X about Kenya, Nairobi, Mombasa, Kisumu, Nakuru, Eldoret, or coastal and western Kenya. Exclude retweets, replies, posts that are mostly links, and posts without a clearly identifiable public author.";
+  "Search X for recent, high-engagement public posts from widely followed Kenyan public figures and recognizable Kenyan voices. Prioritize journalists, creators, athletes, entertainers, business leaders, civic voices, organizations, and other popular accounts discussing Kenya, Nairobi, Mombasa, Kisumu, Nakuru, Eldoret, or coastal and western Kenya. Exclude retweets, replies, posts that are mostly links, obscure low-engagement accounts, and posts without a clearly identifiable public author.";
 const cacheTtlMs = 5 * 60 * 1000;
 const xaiModel = process.env.XAI_MODEL?.trim() || "grok-4.6";
 const roundSchema = {
@@ -175,7 +175,7 @@ router.get("/questions", async (req, res): Promise<void> => {
           {
             role: "system",
             content:
-              "You create a factual five-question quote guessing round. Use only public X posts returned by the X Search tool. Never invent, paraphrase, or combine posts. Return exactly five posts from five or more distinct authors so the game can build four answer options. Prefer posts from the last 7 days. Keep the exact post text and direct post URL. Do not include private accounts, retweets, replies, or posts that are mostly links.",
+              "You create a factual five-question quote guessing round. Use only public X posts returned by the X Search tool. Never invent, paraphrase, or combine posts. Return exactly five posts from five or more distinct, widely followed or clearly recognizable public authors so the game can build four answer options. Prioritize posts with strong visible engagement and well-known Kenyan public accounts over random or obscure accounts. Prefer posts from the last 7 days, but choose popularity and recognizability over strict recency when needed. Keep the exact post text and direct post URL. Do not include private accounts, retweets, replies, or posts that are mostly links.",
           },
           {
             role: "user",

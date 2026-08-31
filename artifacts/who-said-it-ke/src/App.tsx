@@ -760,7 +760,7 @@ function HomeScreen({ name, streak, bestScore, dailyCompleted, source, loading, 
               <span className={`flex items-center gap-1 rounded-full border px-3 py-1 font-mono-custom text-[10px] uppercase tracking-[.16em] ${live ? 'border-[#72d0a1]/40 text-[#a4f0c8]' : 'border-[#f6b94a]/40 text-[#f6d486]'}`}><Radio size={11} /> {live ? 'Live from X' : loading ? 'Connecting to X' : 'Demo fallback'}</span>
             </div>
             <h1 className="max-w-[680px] text-balance text-[clamp(2.8rem,7vw,5.8rem)] font-bold leading-[.92] tracking-[-.075em]">Think you know<br /><span className="text-[#f6b94a]">the voice?</span></h1>
-            <p className="mt-6 max-w-[530px] text-[16px] leading-relaxed text-[#c9d6cf] md:text-[18px]">{live ? 'Five real public posts from X. Four authors. Ten seconds to clock who posted each one.' : 'Five demo quotes. Four names. Ten seconds to clock the speaker while the live X feed reconnects.'} A quick-fire group-chat challenge with a little Nairobi pace.</p>
+            <p className="mt-6 max-w-[530px] text-[16px] leading-relaxed text-[#c9d6cf] md:text-[18px]">{live ? 'Five popular public posts from X. Four recognizable authors. Ten seconds to clock who posted each one.' : 'Five demo quotes. Four names. Ten seconds to clock the speaker while the live X feed reconnects.'} A quick-fire group-chat challenge with a little Nairobi pace.</p>
              <button onClick={startGame} disabled={loading} className="press mt-8 inline-flex items-center gap-3 rounded-xl bg-[#f6b94a] px-5 py-3.5 text-sm font-bold text-[#183d41] shadow-[3px_3px_0_#ec6c5b] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70" data-testid="button-start-game">
                {loading ? 'Loading live posts…' : dailyCompleted ? 'Play another run' : "Start today's game"} <ArrowRight size={18} />
             </button>
@@ -782,7 +782,7 @@ function HomeScreen({ name, streak, bestScore, dailyCompleted, source, loading, 
           <div className="flex items-center justify-between"><div><div className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#ec6c5b]">HOW IT WORKS</div><h2 className="mt-2 text-2xl font-bold tracking-[-.05em]">Fast fingers, sharp ears.</h2></div><Sparkles className="text-[#e5a632]" size={25} /></div>
           <div className="mt-7 grid gap-6 sm:grid-cols-3">
              <Step number="01" title={live ? 'Read the post' : 'Read the quote'} copy={live ? 'Every line is shown as returned by X.' : 'Demo content is clearly labeled while X reconnects.'} />
-             <Step number="02" title="Pick the voice" copy={live ? 'Four public X authors. One best guess.' : 'Four demo names. One best guess.'} />
+             <Step number="02" title="Pick the voice" copy={live ? 'Four recognizable X authors. One best guess.' : 'Four demo names. One best guess.'} />
             <Step number="03" title="Beat the clock" copy="Speed and combos push your score higher." />
           </div>
         </div>
