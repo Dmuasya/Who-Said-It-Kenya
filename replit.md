@@ -22,22 +22,24 @@ A mobile-first fictional quote guessing game with five-question daily runs, spee
 
 ## Where things live
 
-- `artifacts/who-said-it-ke/src/App.tsx` — game state, local demo question pool, scoring, persistence, and app views
+- `artifacts/who-said-it-ke/src/App.tsx` — game state, live/demo question loading, scoring, persistence, and app views
 - `artifacts/who-said-it-ke/src/index.css` — visual theme, responsive layout helpers, focus states, and motion
+- `artifacts/api-server/src/routes/questions.ts` — server-side X recent-search adapter and five-question round builder
 - `artifacts/who-said-it-ke/.replit-artifact/artifact.toml` — artifact routing and managed web workflow
-- `artifacts/api-server` — shared API scaffold; not required by the local-only game MVP
+- `lib/api-spec/openapi.yaml` — source of truth for the generated `/api/questions` contract
 
 ## Architecture decisions
 
-- The first release is intentionally local-only: localStorage makes the core loop instant and keeps demo play usable without accounts or a database.
-- All quotes and politicians are explicitly fictional demo data to avoid presenting fabricated claims about real people.
-- `getDailyChallenge(date)` provides a deterministic date-based question selection seam for a future verified content source.
+- X's read-only app-only connection is called only from the API server; the browser never receives X credentials.
+- Live rounds use unmodified public post text and link back to the original X post; the local question pool is an explicitly labeled fallback for X outages or credit limits.
+- `getDailyChallenge(date)` remains a deterministic fallback so the core loop stays playable without accounts or a database.
 - Browser Web Share is preferred, with clipboard, WhatsApp, and X fallbacks for friend sharing.
 
 ## Product
 
-- Players start a daily five-question classic run after an energetic countdown.
+- Players start a daily five-question run after an energetic countdown, using recent Kenyan-context public posts from X when available.
 - Each question has four shuffled options, a 10-second timer, speed-based scoring, one hint, feedback, and combo tracking.
+- Live questions identify the public post author and provide an “Open original post” link; demo fallback rounds are visibly labeled.
 - Results include score, rank, streak, performance details, and a spoiler-free share/challenge flow.
 - Home, leaderboard period tabs, profile editing, achievements, sound preference, and local score persistence are included.
 
