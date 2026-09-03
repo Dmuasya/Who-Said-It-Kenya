@@ -1,6 +1,6 @@
 # Who Said It? Kenya
 
-A mobile-first fictional quote guessing game with five-question daily runs, speed scoring, streaks, leaderboards, profiles, and spoiler-free friend challenges.
+A mobile-first quote guessing game with Quickfire, Classic, and Marathon runs, speed scoring, streaks, leaderboards, profiles, and spoiler-free friend challenges.
 
 ## Run & Operate
 
@@ -22,24 +22,23 @@ A mobile-first fictional quote guessing game with five-question daily runs, spee
 
 ## Where things live
 
-- `artifacts/who-said-it-ke/src/App.tsx` — game state, live/demo question loading, scoring, persistence, and app views
+- `artifacts/who-said-it-ke/src/App.tsx` — game state, local dataset question building, scoring, persistence, and app views
+- `artifacts/who-said-it-ke/src/data/kenyaXPosts.ts` — normalized, deduplicated public X-post dataset used by the game
 - `artifacts/who-said-it-ke/src/index.css` — visual theme, responsive layout helpers, focus states, and motion
-- `artifacts/api-server/src/routes/questions.ts` — server-side X recent-search adapter and five-question round builder
 - `artifacts/who-said-it-ke/.replit-artifact/artifact.toml` — artifact routing and managed web workflow
-- `lib/api-spec/openapi.yaml` — source of truth for the generated `/api/questions` contract
+- `lib/api-spec/openapi.yaml` — health-check API contract only; game content is local
 
 ## Architecture decisions
 
-- xAI's Grok API is called only from the API server with the `XAI_API_KEY` Replit Secret (with the existing `X_BEARER_TOKEN` secret accepted as a compatibility alias); the browser never receives credentials.
-- Live rounds use xAI's X Search tool to prioritize popular public posts from recognizable Kenyan voices and link back to the original X post; the local question pool is an explicitly labeled fallback for xAI outages, credit limits, or missing credentials.
+- Game rounds do not call an external API. They use the normalized local dataset of exact public X posts, with each question linking to its original post.
 - `getDailyChallenge(date)` remains a deterministic fallback so the core loop stays playable without accounts or a database.
 - Browser Web Share is preferred, with clipboard, WhatsApp, and X fallbacks for friend sharing.
 
 ## Product
 
-- Players start a daily five-question run after an energetic countdown, using recent Kenyan-context public posts from X when available.
-- Each question has four shuffled options, a 10-second timer, speed-based scoring, one hint, feedback, and combo tracking.
-- Live questions identify the public post author and provide an “Open original post” link; demo fallback rounds are visibly labeled.
+- Players choose Quickfire (5 questions / 50 seconds), Classic (10 / 90 seconds), or Marathon (25 / 3 minutes) after an energetic countdown.
+- Each question has four shuffled options, mode-specific per-question timing, speed-based scoring, one hint, feedback, and combo tracking.
+- Curated questions identify the public post author and provide an “Open original post” link; fictional demo fallback rounds are visibly labeled.
 - Results include score, rank, streak, performance details, and a spoiler-free share/challenge flow.
 - Home, leaderboard period tabs, profile editing, achievements, sound preference, and local score persistence are included.
 

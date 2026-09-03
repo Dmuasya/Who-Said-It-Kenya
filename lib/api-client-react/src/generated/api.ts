@@ -16,9 +16,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  ErrorResponse,
-  HealthStatus,
-  QuestionsResponse
+  HealthStatus
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -114,84 +112,6 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
-export const getGetQuestionsUrl = () => {
-
-
-
-
-  return `/api/questions`
-}
-
-/**
- * Returns five public-post questions sourced from X's recent search API.
- * @summary Get live X-backed game questions
- */
-export const getQuestions = async ( options?: Parameters<typeof customFetch>[1]): Promise<QuestionsResponse> => {
-
-  return customFetch<QuestionsResponse>(getGetQuestionsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetQuestionsQueryKey = () => {
-    return [
-    `/api/questions`
-    ] as const;
-    }
-
-
-export const getGetQuestionsQueryOptions = <TData = Awaited<ReturnType<typeof getQuestions>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetQuestionsQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuestions>>> = ({ signal }) => getQuestions({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuestions>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetQuestionsQueryResult = NonNullable<Awaited<ReturnType<typeof getQuestions>>>
-export type GetQuestionsQueryError = ErrorType<ErrorResponse>
-
-
-/**
- * @summary Get live X-backed game questions
- */
-
-export function useGetQuestions<TData = Awaited<ReturnType<typeof getQuestions>>, TError = ErrorType<ErrorResponse>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetQuestionsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -17,35 +17,3 @@ export const HealthCheckResponse = zod.object({
 })
 
 
-/**
- * Returns five public-post questions sourced from X's recent search API.
- * @summary Get live X-backed game questions
- */
-export const getQuestionsResponseQuestionsItemOptionsMin = 4;
-export const getQuestionsResponseQuestionsItemOptionsMax = 4;
-
-export const getQuestionsResponseQuestionsMin = 5;
-export const getQuestionsResponseQuestionsMax = 5;
-
-
-
-export const GetQuestionsResponse = zod.object({
-  "questions": zod.array(zod.object({
-  "id": zod.string(),
-  "quote": zod.string(),
-  "answer": zod.string(),
-  "options": zod.array(zod.string()).min(getQuestionsResponseQuestionsItemOptionsMin).max(getQuestionsResponseQuestionsItemOptionsMax),
-  "context": zod.string(),
-  "tag": zod.string(),
-  "difficulty": zod.enum(['easy', 'medium', 'hard', 'boss']),
-  "category": zod.string(),
-  "source": zod.enum(['live', 'demo']),
-  "sourceUrl": zod.string().nullable(),
-  "authorUsername": zod.string().nullable(),
-  "createdAt": zod.coerce.date().nullable()
-})).min(getQuestionsResponseQuestionsMin).max(getQuestionsResponseQuestionsMax),
-  "source": zod.enum(['live', 'demo']),
-  "refreshedAt": zod.coerce.date()
-})
-
-

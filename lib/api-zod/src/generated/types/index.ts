@@ -6,10 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './errorResponse';
-export * from './gameQuestion';
-export * from './gameQuestionDifficulty';
-export * from './gameQuestionSource';
 export * from './healthStatus';
-export * from './questionsResponse';
-export * from './questionsResponseSource';

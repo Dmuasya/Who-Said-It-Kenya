@@ -10,8 +10,6 @@ servers:
 tags:
   - name: health
     description: Health operations
-  - name: game
-    description: Live game content
 paths:
   /healthz:
     get:
@@ -26,25 +24,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-  /questions:
-    get:
-      operationId: getQuestions
-      tags: [game]
-      summary: Get live X-backed game questions
-      description: Returns five public-post questions sourced from X's recent search API.
-      responses:
-        "200":
-          description: Five playable questions
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuestionsResponse"
-        "503":
-          description: The X feed is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -54,77 +33,4 @@ components:
           type: string
       required:
         - status
-    GameQuestion:
-      type: object
-      required:
-        - id
-        - quote
-        - answer
-        - options
-        - context
-        - tag
-        - difficulty
-        - category
-        - source
-        - sourceUrl
-        - authorUsername
-        - createdAt
-      properties:
-        id:
-          type: string
-        quote:
-          type: string
-        answer:
-          type: string
-        options:
-          type: array
-          minItems: 4
-          maxItems: 4
-          items:
-            type: string
-        context:
-          type: string
-        tag:
-          type: string
-        difficulty:
-          type: string
-          enum: [easy, medium, hard, boss]
-        category:
-          type: string
-        source:
-          type: string
-          enum: [live, demo]
-        sourceUrl:
-          type: ["string", "null"]
-        authorUsername:
-          type: ["string", "null"]
-        createdAt:
-          type: ["string", "null"]
-          format: date-time
-    QuestionsResponse:
-      type: object
-      required:
-        - questions
-        - source
-        - refreshedAt
-      properties:
-        questions:
-          type: array
-          minItems: 5
-          maxItems: 5
-          items:
-            $ref: "#/components/schemas/GameQuestion"
-        source:
-          type: string
-          enum: [live, demo]
-        refreshedAt:
-          type: string
-          format: date-time
-    ErrorResponse:
-      type: object
-      required:
-        - error
-      properties:
-        error:
-          type: string
 

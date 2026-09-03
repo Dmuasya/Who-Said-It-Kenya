@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
-import { getQuestions, type QuestionsResponse } from '@workspace/api-client-react';
+import { KENYA_X_POSTS } from './data/kenyaXPosts';
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,7 +17,6 @@ import {
   RotateCcw,
   ExternalLink,
   Radio,
-  RefreshCw,
   Share2,
   Shield,
   Sparkles,
@@ -33,7 +32,31 @@ import {
 type View = 'home' | 'play' | 'leaders' | 'profile' | 'share';
 type Phase = 'countdown' | 'question' | 'reveal' | 'finished';
 type ResultKind = 'correct' | 'wrong' | 'timeout';
-type ContentSource = 'live' | 'demo';
+type ContentSource = 'curated' | 'demo';
+type GameModeId = 'quickfire' | 'classic' | 'marathon';
+type GameMode = {
+  id: GameModeId;
+  label: string;
+  questionCount: number;
+  totalSeconds: number;
+  secondsPerQuestion: number;
+  description: string;
+  signature?: boolean;
+};
+
+const GAME_MODES: GameMode[] = [
+  { id: 'quickfire', label: 'Quickfire', questionCount: 5, totalSeconds: 50, secondsPerQuestion: 10, description: 'The signature five-question group challenge.', signature: true },
+  { id: 'classic', label: 'Classic', questionCount: 10, totalSeconds: 90, secondsPerQuestion: 9, description: 'A longer round for sharper pattern-spotting.' },
+  { id: 'marathon', label: 'Marathon', questionCount: 25, totalSeconds: 180, secondsPerQuestion: 7.2, description: 'Twenty-five posts. Three minutes. Stay locked in.' },
+];
+
+function getGameMode(id: GameModeId) {
+  return GAME_MODES.find((mode) => mode.id === id) || GAME_MODES[0];
+}
+
+function formatModeDuration(totalSeconds: number) {
+  return totalSeconds >= 60 ? `${Math.floor(totalSeconds / 60)} min${totalSeconds % 60 ? ` ${totalSeconds % 60} sec` : ''}` : `${totalSeconds} seconds`;
+}
 
 type Question = {
   id: string;
@@ -57,6 +80,32 @@ type AnswerRecord = {
   time: number;
   kind: ResultKind;
 };
+
+function buildCuratedQuestions() {
+  const uniqueAuthors = Array.from(new Map(KENYA_X_POSTS.map((post) => [post.authorUsername.toLowerCase(), post])).values());
+  const optionUsers = uniqueAuthors.slice(0, 4);
+  const formatAuthor = (author: { authorName: string; authorUsername: string }) => `${author.authorName} (@${author.authorUsername.replace(/^@/, '')})`;
+
+  return KENYA_X_POSTS.map((post, index) => {
+    const answer = formatAuthor(post);
+    const options = optionUsers.map(formatAuthor);
+    if (!options.includes(answer)) options[0] = answer;
+    return {
+      id: `curated-${index}-${post.authorUsername}`,
+      quote: post.text,
+      answer,
+      options,
+      context: post.context,
+      tag: index === KENYA_X_POSTS.length - 1 ? 'FINAL BOSS · CURATED X' : 'CURATED X POST',
+      difficulty: index >= KENYA_X_POSTS.length - 5 ? 'hard' : index >= 8 ? 'medium' : 'easy',
+      category: 'public post',
+      source: 'curated' as const,
+      sourceUrl: post.url,
+      authorUsername: post.authorUsername,
+      createdAt: null,
+    } satisfies Question;
+  });
+}
 
 const QUESTIONS: Question[] = [
   {
@@ -349,13 +398,13 @@ function App() {
   const [totalAnswered, setTotalAnswered] = useState(() => readNumber(STORAGE.totalAnswered, 0));
   const [totalCorrect, setTotalCorrect] = useState(() => readNumber(STORAGE.totalCorrect, 0));
   const [dailyCompleted, setDailyCompleted] = useState(() => localStorage.getItem(STORAGE.dailyCompleted) === new Date().toDateString());
-  const [questionPool, setQuestionPool] = useState<Question[]>(() => getDailyChallenge());
-  const [gameQuestions, setGameQuestions] = useState<Question[]>(() => getDailyChallenge());
-  const [contentSource, setContentSource] = useState<ContentSource>('demo');
-  const [roundSource, setRoundSource] = useState<ContentSource>('demo');
-  const [contentLoading, setContentLoading] = useState(true);
-  const [contentError, setContentError] = useState('');
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const curatedQuestions = buildCuratedQuestions();
+  const [questionPool] = useState<Question[]>(() => curatedQuestions.length >= 5 ? curatedQuestions : getDailyChallenge());
+  const [gameQuestions, setGameQuestions] = useState<Question[]>(() => curatedQuestions.slice(0, 5));
+  const [contentSource] = useState<ContentSource>('curated');
+  const [roundSource, setRoundSource] = useState<ContentSource>('curated');
+  const [selectedMode, setSelectedMode] = useState<GameModeId>('quickfire');
+  const [roundMode, setRoundMode] = useState<GameModeId>('quickfire');
   const [phase, setPhase] = useState<Phase>('countdown');
   const [countdown, setCountdown] = useState(3);
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -364,7 +413,7 @@ function App() {
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(getGameMode('quickfire').secondsPerQuestion);
   const [startedAt, setStartedAt] = useState(0);
   const [usedHint, setUsedHint] = useState(false);
   const [hintForQuestion, setHintForQuestion] = useState<number | null>(null);
@@ -394,43 +443,21 @@ function App() {
     localStorage.setItem(STORAGE.totalCorrect, String(totalCorrect));
   }, [bestScore, bestStreak, name, soundOn, totalAnswered, totalCorrect, totalPoints]);
 
-  const loadQuestions = useCallback(async () => {
-    setContentLoading(true);
-    setContentError('');
-    try {
-      const payload: QuestionsResponse = await getQuestions();
-      if (!payload.questions?.length || payload.questions.length !== 5) {
-        throw new Error('The live feed returned an incomplete round.');
-      }
-      setQuestionPool(payload.questions);
-      setContentSource(payload.source === 'live' ? 'live' : 'demo');
-      setLastSyncedAt(payload.refreshedAt);
-    } catch (error) {
-      const apiMessage =
-        error && typeof error === 'object' && 'data' in error
-          ? (error as { data?: { error?: string } }).data?.error
-          : undefined;
-      setQuestionPool(getDailyChallenge());
-      setContentSource('demo');
-      setLastSyncedAt(null);
-      setContentError(apiMessage || 'Live X posts are unavailable right now. Demo mode is ready.');
-    } finally {
-      setContentLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadQuestions();
-  }, [loadQuestions]);
-
   const currentQuestion = gameQuestions[questionIndex] || questionPool[0] || QUESTIONS[0];
   const correctCount = answerRecords.filter((record) => record.correct).length;
   const shareGrid = answerRecords.map((record) => (record.correct ? '🟩' : '🟥')).join('');
-  const gameShareText = `I scored ${score.toLocaleString()} points on Who Said It? Kenya — ${roundSource === 'live' ? 'a live X public-post challenge' : 'a demo quote challenge'}.\n${shareGrid || '⬜⬜⬜⬜⬜'} ${correctCount}/5\nCan you beat my score? #WhoSaidItKE`;
+  const activeMode = getGameMode(roundMode);
+  const gameShareText = `I scored ${score.toLocaleString()} points on Who Said It? Kenya — ${activeMode.label} mode.\n${shareGrid || '⬜'.repeat(activeMode.questionCount)} ${correctCount}/${activeMode.questionCount}\nCan you beat my score? #WhoSaidItKE`;
 
   const startGame = useCallback(() => {
-    const questions = questionPool.length === 5 ? questionPool : getDailyChallenge();
-    setGameQuestions(questions.map((question) => ({ ...question, options: shuffle(question.options) })));
+    const mode = getGameMode(selectedMode);
+    const sourceQuestions = questionPool.length >= 5 ? questionPool : getDailyChallenge();
+    const questions = Array.from({ length: mode.questionCount }, (_, index) => {
+      const question = sourceQuestions[index % sourceQuestions.length];
+      return { ...question, id: `${question.id}-${mode.id}-${index}`, tag: index === mode.questionCount - 1 ? `FINAL BOSS · ${mode.label.toUpperCase()}` : question.tag, options: shuffle(question.options) };
+    });
+    setGameQuestions(questions);
+    setRoundMode(selectedMode);
     setRoundSource(contentSource);
     setQuestionIndex(0);
     setAnswerRecords([]);
@@ -439,14 +466,14 @@ function App() {
     setMaxCombo(0);
     setSelected(null);
     setFeedback(null);
-    setTimeLeft(10);
+    setTimeLeft(mode.secondsPerQuestion);
     setUsedHint(false);
     setHintForQuestion(null);
     setShowQuitConfirm(false);
     setPhase('countdown');
     setCountdown(3);
     syncView('play');
-  }, [contentSource, questionPool, syncView]);
+  }, [contentSource, questionPool, selectedMode, syncView]);
 
   useEffect(() => {
     if (view !== 'play' || phase !== 'countdown') return;
@@ -469,9 +496,10 @@ function App() {
 
   useEffect(() => {
     if (view !== 'play' || phase !== 'question') return;
+    const mode = getGameMode(roundMode);
     const timer = window.setInterval(() => {
       const elapsed = (Date.now() - startedAt) / 1000;
-      const remaining = Math.max(0, 10 - elapsed);
+      const remaining = Math.max(0, mode.secondsPerQuestion - elapsed);
       setTimeLeft(remaining);
       if (remaining <= 0) {
         window.clearInterval(timer);
@@ -480,12 +508,12 @@ function App() {
     }, 100);
     tickRef.current = timer;
     return () => window.clearInterval(timer);
-  }, [view, phase, startedAt]);
+  }, [roundMode, view, phase, startedAt]);
 
   const answerQuestion = useCallback((optionIndex: number | null) => {
     if (phase !== 'question') return;
     if (tickRef.current) window.clearInterval(tickRef.current);
-    const elapsed = Math.min(10, Math.max(0, (Date.now() - startedAt) / 1000));
+    const elapsed = Math.min(getGameMode(roundMode).secondsPerQuestion, Math.max(0, (Date.now() - startedAt) / 1000));
     const correct = optionIndex !== null && currentQuestion.options[optionIndex] === currentQuestion.answer;
     const kind: ResultKind = optionIndex === null ? 'timeout' : correct ? 'correct' : 'wrong';
     const bucketBonus = elapsed <= 2 ? 500 : elapsed <= 4 ? 400 : elapsed <= 6 ? 300 : elapsed <= 8 ? 200 : 100;
@@ -493,14 +521,14 @@ function App() {
     const nextCombo = correct ? combo + 1 : 0;
     setSelected(optionIndex);
     setFeedback(kind);
-    setTimeLeft(Math.max(0, 10 - elapsed));
+    setTimeLeft(Math.max(0, getGameMode(roundMode).secondsPerQuestion - elapsed));
     setScore((current) => current + points);
     setCombo(nextCombo);
     setMaxCombo((current) => Math.max(current, nextCombo));
     setAnswerRecords((records) => [...records, { selected: optionIndex, correct, points, time: elapsed, kind }]);
     playTone(kind === 'correct' ? 'correct' : 'wrong', soundOn);
     setPhase('reveal');
-  }, [combo, currentQuestion, hintForQuestion, phase, questionIndex, soundOn, startedAt]);
+  }, [combo, currentQuestion, hintForQuestion, phase, questionIndex, roundMode, soundOn, startedAt]);
 
   useEffect(() => {
     if (phase !== 'reveal') return;
@@ -534,20 +562,15 @@ function App() {
         }
         playTone('win', soundOn);
         setPhase('finished');
-      } else if (questionIndex === 3) {
-        setQuestionIndex(4);
-        setCountdown(3);
-        setTimeLeft(10);
-        setPhase('countdown');
       } else {
         setQuestionIndex((current) => current + 1);
         setPhase('countdown');
         setCountdown(2);
-        setTimeLeft(10);
+        setTimeLeft(getGameMode(roundMode).secondsPerQuestion);
       }
     }, 1250);
     return () => window.clearTimeout(revealTimer);
-  }, [gameQuestions.length, phase, questionIndex, score, soundOn, streak]);
+  }, [gameQuestions.length, phase, questionIndex, roundMode, score, soundOn, streak]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -634,7 +657,7 @@ function App() {
         <Header view={view} name={name} source={view === 'play' ? roundSource : contentSource} soundOn={soundOn} setSoundOn={setSoundOn} onNavigate={navigate} />
       ) : null}
       <main>
-        {view === 'home' && <HomeScreen name={name} streak={streak} bestScore={bestScore} dailyCompleted={dailyCompleted} source={contentSource} loading={contentLoading} error={contentError} lastSyncedAt={lastSyncedAt} startGame={startGame} onRefresh={loadQuestions} onNavigate={syncView} />}
+        {view === 'home' && <HomeScreen name={name} streak={streak} bestScore={bestScore} dailyCompleted={dailyCompleted} source={contentSource} mode={getGameMode(selectedMode)} onModeChange={setSelectedMode} startGame={startGame} onNavigate={syncView} />}
         {view === 'play' && phase !== 'finished' && (
           <GameScreen
             phase={phase}
@@ -648,6 +671,7 @@ function App() {
             combo={combo}
             hintUsed={usedHint}
             hintForQuestion={hintForQuestion}
+            mode={getGameMode(roundMode)}
             source={roundSource}
             onAnswer={answerQuestion}
             onHint={useHint}
@@ -663,6 +687,7 @@ function App() {
             maxCombo={maxCombo}
             streak={streak}
             records={answerRecords}
+            mode={activeMode}
             source={roundSource}
             shareText={gameShareText}
             copied={copied}
@@ -696,6 +721,7 @@ function App() {
         {view === 'share' && (
           <ChallengeScreen
             name={name}
+            mode={activeMode}
             shareText={gameShareText}
             source={roundSource}
             onShare={shareResult}
@@ -722,7 +748,7 @@ function Header({ view, name, source, soundOn, setSoundOn, onNavigate }: { view:
             <MessageCircle size={21} strokeWidth={2.7} />
           </div>
           <div className="leading-none">
-            <div className="font-mono-custom text-[10px] font-medium uppercase tracking-[.18em] text-[#ec6c5b]">{source === 'live' ? 'LIVE ON X' : 'DEMO FALLBACK'}</div>
+            <div className="font-mono-custom text-[10px] font-medium uppercase tracking-[.18em] text-[#ec6c5b]">{source === 'curated' ? 'CURATED X POSTS' : 'DEMO FALLBACK'}</div>
             <div className="mt-1 text-[17px] font-bold tracking-[-.04em] text-[#183d41]">Who Said It<span className="text-[#ec6c5b]">?</span> <span className="font-mono-custom text-[11px] font-medium tracking-normal text-[#567276]">KE</span></div>
           </div>
         </Link>
@@ -745,8 +771,8 @@ function NavLink({ href, active, icon, label, onClick, testId }: { href: string;
   return <Link href={href} onClick={onClick} className={`nav-link flex items-center gap-2 text-sm no-underline ${active ? 'active' : ''}`} data-testid={testId}>{icon}{label}</Link>;
 }
 
-function HomeScreen({ name, streak, bestScore, dailyCompleted, source, loading, error, lastSyncedAt, startGame, onRefresh, onNavigate }: { name: string; streak: number; bestScore: number; dailyCompleted: boolean; source: ContentSource; loading: boolean; error: string; lastSyncedAt: string | null; startGame: () => void; onRefresh: () => void; onNavigate: (view: View) => void }) {
-  const live = source === 'live';
+function HomeScreen({ name, streak, bestScore, dailyCompleted, source, mode, onModeChange, startGame, onNavigate }: { name: string; streak: number; bestScore: number; dailyCompleted: boolean; source: ContentSource; mode: GameMode; onModeChange: (mode: GameModeId) => void; startGame: () => void; onNavigate: (view: View) => void }) {
+  const live = source === 'curated';
   return (
     <div className="screen">
       <section className="relative overflow-hidden rounded-[28px] bg-[#183d41] px-6 py-9 text-[#f7f3e9] shadow-[5px_5px_0_#ec6c5b] md:px-12 md:py-14">
@@ -756,15 +782,18 @@ function HomeScreen({ name, streak, bestScore, dailyCompleted, source, loading, 
           <div className="rise-in">
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-[#ec6c5b] px-3 py-1 font-mono-custom text-[10px] font-medium uppercase tracking-[.16em] text-[#fff8e9]">TODAY'S DROP</span>
-              <span className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#b9cfca]">5 questions · 50 seconds</span>
-              <span className={`flex items-center gap-1 rounded-full border px-3 py-1 font-mono-custom text-[10px] uppercase tracking-[.16em] ${live ? 'border-[#72d0a1]/40 text-[#a4f0c8]' : 'border-[#f6b94a]/40 text-[#f6d486]'}`}><Radio size={11} /> {live ? 'Live from X' : loading ? 'Connecting to X' : 'Demo fallback'}</span>
+              <span className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#b9cfca]">{mode.questionCount} questions · {formatModeDuration(mode.totalSeconds)}</span>
+              <span className={`flex items-center gap-1 rounded-full border px-3 py-1 font-mono-custom text-[10px] uppercase tracking-[.16em] ${live ? 'border-[#72d0a1]/40 text-[#a4f0c8]' : 'border-[#f6b94a]/40 text-[#f6d486]'}`}><Radio size={11} /> {live ? 'Curated X' : 'Demo fallback'}</span>
             </div>
             <h1 className="max-w-[680px] text-balance text-[clamp(2.8rem,7vw,5.8rem)] font-bold leading-[.92] tracking-[-.075em]">Think you know<br /><span className="text-[#f6b94a]">the voice?</span></h1>
-            <p className="mt-6 max-w-[530px] text-[16px] leading-relaxed text-[#c9d6cf] md:text-[18px]">{live ? 'Five popular public posts from X. Four recognizable authors. Ten seconds to clock who posted each one.' : 'Five demo quotes. Four names. Ten seconds to clock the speaker while the live X feed reconnects.'} A quick-fire group-chat challenge with a little Nairobi pace.</p>
-             <button onClick={startGame} disabled={loading} className="press mt-8 inline-flex items-center gap-3 rounded-xl bg-[#f6b94a] px-5 py-3.5 text-sm font-bold text-[#183d41] shadow-[3px_3px_0_#ec6c5b] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70" data-testid="button-start-game">
-               {loading ? 'Loading live posts…' : dailyCompleted ? 'Play another run' : "Start today's game"} <ArrowRight size={18} />
+            <p className="mt-6 max-w-[530px] text-[16px] leading-relaxed text-[#c9d6cf] md:text-[18px]">{live ? `${mode.questionCount} popular public posts from X. Four recognizable authors. ${mode.secondsPerQuestion} seconds per post.` : `${mode.questionCount} demo quotes. Four names. ${mode.secondsPerQuestion} seconds per question.`} {mode.id === 'quickfire' ? 'A perfect group-chat challenge with a little Nairobi pace.' : mode.description}</p>
+             <div className="mt-7 grid max-w-[650px] gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Choose a game mode">
+               {GAME_MODES.map((gameMode) => <button key={gameMode.id} onClick={() => onModeChange(gameMode.id)} role="radio" aria-checked={mode.id === gameMode.id} className={`rounded-2xl border p-4 text-left transition-all ${mode.id === gameMode.id ? 'border-[#f6b94a] bg-[#f6b94a]/15 shadow-[3px_3px_0_#ec6c5b]' : 'border-[#f7f3e9]/15 bg-[#f7f3e9]/[.06] hover:border-[#f6b94a]/60'}`} data-testid={`button-mode-${gameMode.id}`}><div className="flex items-center justify-between gap-2"><span className="font-bold">{gameMode.label}</span>{gameMode.signature && <span className="rounded-full bg-[#ec6c5b] px-2 py-1 font-mono-custom text-[8px] uppercase tracking-[.12em] text-[#fff8e9]">Signature</span>}</div><div className="mt-2 font-mono-custom text-[10px] uppercase tracking-[.12em] text-[#a9c5be]">{gameMode.questionCount} Q · {formatModeDuration(gameMode.totalSeconds)}</div></button>)}
+             </div>
+             <button onClick={startGame} className="press mt-8 inline-flex items-center gap-3 rounded-xl bg-[#f6b94a] px-5 py-3.5 text-sm font-bold text-[#183d41] shadow-[3px_3px_0_#ec6c5b] transition-transform hover:-translate-y-0.5" data-testid="button-start-game">
+               {dailyCompleted ? `Play ${mode.label}` : `Start ${mode.label}`} <ArrowRight size={18} />
             </button>
-             {error ? <div className="mt-5 max-w-[560px] rounded-xl border border-[#ec6c5b]/40 bg-[#ec6c5b]/10 p-3 text-xs leading-relaxed text-[#ffd0c6]" role="status"><div className="flex items-start gap-2"><Shield size={14} className="mt-0.5 shrink-0" /><span>{error} <button onClick={onRefresh} className="ml-1 inline-flex items-center gap-1 font-bold underline underline-offset-2" data-testid="button-refresh-x"><RefreshCw size={12} /> Try again</button></span></div></div> : <div className="mt-5 flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.12em] text-[#91b4ac]"><Shield size={13} /> {live ? `Public posts · synced ${lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'just now'}` : 'Demo content while X reconnects'}</div>}
+             <div className="mt-5 flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.12em] text-[#91b4ac]"><Shield size={13} /> {live ? 'Public X posts from your curated dataset' : 'Demo content'}</div>
           </div>
           <div className="relative rise-in delay-2">
             <div className="rounded-2xl border border-[#f7f3e9]/15 bg-[#f7f3e9]/[.08] p-5 backdrop-blur-sm">
@@ -792,7 +821,7 @@ function HomeScreen({ name, streak, bestScore, dailyCompleted, source, loading, 
         </button>
       </section>
       <section className="mt-10 flex flex-col justify-between gap-5 border-t border-[#d7d0be] pt-6 sm:flex-row sm:items-center">
-         <div><p className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#ec6c5b]">A NOTE FROM THE HOUSE</p><p className="mt-2 text-sm text-[#567276]">{live ? 'Live public posts are sourced from X. We never rewrite the post text.' : 'The live X feed is unavailable, so the game is using clearly labeled demo content.'}</p></div>
+         <div><p className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#ec6c5b]">A NOTE FROM THE HOUSE</p><p className="mt-2 text-sm text-[#567276]">{live ? 'These are exact public posts from the curated dataset. We never rewrite the post text.' : 'The curated post dataset is unavailable, so the game is using clearly labeled demo content.'}</p></div>
         <button onClick={() => onNavigate('profile')} className="flex items-center gap-2 text-sm font-bold text-[#183d41] underline decoration-[#f6b94a] decoration-2 underline-offset-4" data-testid="button-open-profile">Set your player profile <ArrowRight size={15} /></button>
       </section>
     </div>
@@ -803,26 +832,26 @@ function Step({ number, title, copy }: { number: string; title: string; copy: st
   return <div><div className="font-mono-custom text-[11px] font-medium text-[#ec6c5b]">{number}</div><h3 className="mt-2 text-sm font-bold">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#567276]">{copy}</p></div>;
 }
 
-function GameScreen({ phase, countdown, question, questionIndex, timeLeft, selected, feedback, score, combo, hintUsed, hintForQuestion, source, onAnswer, onHint, onQuit, lastPoints }: { phase: Phase; countdown: number; question: Question; questionIndex: number; timeLeft: number; selected: number | null; feedback: ResultKind | null; score: number; combo: number; hintUsed: boolean; hintForQuestion: number | null; source: ContentSource; onAnswer: (index: number | null) => void; onHint: () => void; onQuit: () => void; lastPoints: number }) {
-  const live = source === 'live';
+function GameScreen({ phase, countdown, question, questionIndex, timeLeft, selected, feedback, score, combo, hintUsed, hintForQuestion, source, mode, onAnswer, onHint, onQuit, lastPoints }: { phase: Phase; countdown: number; question: Question; questionIndex: number; timeLeft: number; selected: number | null; feedback: ResultKind | null; score: number; combo: number; hintUsed: boolean; hintForQuestion: number | null; source: ContentSource; mode: GameMode; onAnswer: (index: number | null) => void; onHint: () => void; onQuit: () => void; lastPoints: number }) {
+  const live = source === 'curated';
   if (phase === 'countdown') {
-    const isBoss = questionIndex === 4;
-    return <div className="flex min-h-[calc(100dvh-81px)] items-center justify-center bg-[#183d41] px-5 text-center text-[#f7f3e9]"><div className="pop-in"><div className="font-mono-custom text-[11px] uppercase tracking-[.2em] text-[#f6b94a]">{isBoss ? 'THE FINAL BOSS' : questionIndex === 0 ? 'GET READY' : `ROUND ${questionIndex + 1} OF 5`}</div><div className="mt-5 text-[clamp(7rem,26vw,14rem)] font-bold leading-none tracking-[-.1em] text-[#f7f3e9]">{countdown || 'GO'}</div><p className="mx-auto mt-4 max-w-[330px] text-sm text-[#a9c5be]">{isBoss ? 'One last voice. Make it count.' : live ? 'The post is public. The pressure is real.' : 'The quote is fictional. The pressure is real.'}</p><button onClick={onQuit} className="mt-10 text-xs font-bold uppercase tracking-widest text-[#a9c5be] underline underline-offset-4" data-testid="button-quit-countdown">Leave game</button></div></div>;
+    const isBoss = questionIndex === mode.questionCount - 1;
+    return <div className="flex min-h-[calc(100dvh-81px)] items-center justify-center bg-[#183d41] px-5 text-center text-[#f7f3e9]"><div className="pop-in"><div className="font-mono-custom text-[11px] uppercase tracking-[.2em] text-[#f6b94a]">{isBoss ? 'THE FINAL BOSS' : questionIndex === 0 ? mode.label.toUpperCase() : `ROUND ${questionIndex + 1} OF ${mode.questionCount}`}</div><div className="mt-5 text-[clamp(7rem,26vw,14rem)] font-bold leading-none tracking-[-.1em] text-[#f7f3e9]">{countdown || 'GO'}</div><p className="mx-auto mt-4 max-w-[330px] text-sm text-[#a9c5be]">{isBoss ? 'One last voice. Make it count.' : live ? 'The post is public. The pressure is real.' : 'The quote is fictional. The pressure is real.'}</p><button onClick={onQuit} className="mt-10 text-xs font-bold uppercase tracking-widest text-[#a9c5be] underline underline-offset-4" data-testid="button-quit-countdown">Leave game</button></div></div>;
   }
   const eliminated = hintForQuestion === questionIndex && hintUsed ? question.options.filter((option) => option !== question.answer).slice(0, 2) : [];
-  const timerPercent = Math.max(0, (timeLeft / 10) * 100);
+  const timerPercent = Math.max(0, (timeLeft / mode.secondsPerQuestion) * 100);
   return (
     <div className={`min-h-[calc(100dvh-0px)] bg-[#183d41] px-4 pb-10 pt-5 text-[#f7f3e9] md:px-8 md:pt-8 ${feedback === 'wrong' || feedback === 'timeout' ? 'answer-shake' : ''}`}>
       <div className="mx-auto max-w-[850px]">
         <div className="flex items-center justify-between">
           <button onClick={onQuit} className="flex items-center gap-2 text-xs font-bold text-[#9ab8b0] transition-colors hover:text-[#f7f3e9]" data-testid="button-quit-game"><ArrowLeft size={16} /> Exit</button>
-          <div className="flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#9ab8b0]"><Radio size={12} className={live ? 'text-[#72d0a1]' : 'text-[#f6b94a]'} /> {live ? 'LIVE ON X' : 'DEMO FALLBACK'} <span className="text-[#567276]">/</span> QUICKFIRE</div>
+          <div className="flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#9ab8b0]"><Radio size={12} className={live ? 'text-[#72d0a1]' : 'text-[#f6b94a]'} /> {live ? 'CURATED X' : 'DEMO FALLBACK'} <span className="text-[#567276]">/</span> {mode.label.toUpperCase()}</div>
           <div className="flex items-center gap-2 font-mono-custom text-xs text-[#f6b94a]"><Zap size={15} fill="currentColor" /> {score.toLocaleString()}</div>
         </div>
-        <div className="mt-7 flex items-center gap-2" aria-label={`Question ${questionIndex + 1} of 5`}>
-          {Array.from({ length: 5 }, (_, index) => <div key={index} className={`h-1.5 flex-1 rounded-full ${index < questionIndex ? 'bg-[#f6b94a]' : index === questionIndex ? 'bg-[#ec6c5b]' : 'bg-[#f7f3e9]/20'}`} />)}
+        <div className="mt-7 flex items-center gap-2" aria-label={`Question ${questionIndex + 1} of ${mode.questionCount}`}>
+          {Array.from({ length: mode.questionCount }, (_, index) => <div key={index} className={`h-1.5 flex-1 rounded-full ${index < questionIndex ? 'bg-[#f6b94a]' : index === questionIndex ? 'bg-[#ec6c5b]' : 'bg-[#f7f3e9]/20'}`} />)}
         </div>
-        <div className="mt-7 flex items-center justify-between"><div><span className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#f6b94a]">{question.tag}</span><p className="mt-1 text-xs text-[#9ab8b0]">Question {String(questionIndex + 1).padStart(2, '0')} <span className="text-[#567276]">of 05</span></p></div><div className={`relative flex h-[70px] w-[70px] items-center justify-center rounded-full border-[5px] ${timeLeft <= 3 ? 'timer-pulse border-[#ec6c5b] text-[#ff9483]' : 'border-[#f6b94a] text-[#f6b94a]'}`}><span className="font-mono-custom text-xl font-medium">{Math.ceil(timeLeft)}</span><span className="absolute -bottom-5 font-mono-custom text-[8px] uppercase tracking-[.16em] text-[#9ab8b0]">seconds</span></div></div>
+        <div className="mt-7 flex items-center justify-between"><div><span className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#f6b94a]">{question.tag}</span><p className="mt-1 text-xs text-[#9ab8b0]">Question {String(questionIndex + 1).padStart(2, '0')} <span className="text-[#567276]">of {String(mode.questionCount).padStart(2, '0')}</span></p></div><div className={`relative flex h-[70px] w-[70px] items-center justify-center rounded-full border-[5px] ${timeLeft <= 3 ? 'timer-pulse border-[#ec6c5b] text-[#ff9483]' : 'border-[#f6b94a] text-[#f6b94a]'}`}><span className="font-mono-custom text-xl font-medium">{Math.ceil(timeLeft)}</span><span className="absolute -bottom-5 font-mono-custom text-[8px] uppercase tracking-[.16em] text-[#9ab8b0]">seconds</span></div></div>
           <div className="mt-10 rounded-[25px] border border-[#f7f3e9]/15 bg-[#214c50] px-5 py-9 shadow-[5px_5px_0_rgba(0,0,0,.12)] md:px-12 md:py-12">
            <div className="flex items-center gap-2 text-[#ec6c5b]"><span className="h-2 w-2 rounded-full bg-[#ec6c5b]" /><span className="font-mono-custom text-[10px] font-medium uppercase tracking-[.18em]">{live ? 'A LIVE X POST' : 'A DEMO QUOTE'}</span></div>
           <blockquote className="mt-6 max-w-[700px] text-[clamp(1.8rem,4vw,3.35rem)] font-bold leading-[1.06] tracking-[-.065em] text-[#f7f3e9]">{question.quote}</blockquote>
@@ -853,10 +882,11 @@ function Feedback({ kind, points, answer, combo }: { kind: ResultKind; points: n
   return <div className="pop-in text-sm font-bold text-[#ffb3a5]">Not this time. The answer was {answer}.</div>;
 }
 
-function performanceMessage(correctCount: number) {
-  if (correctCount === 5) return 'Politician master.';
-  if (correctCount === 4) return 'Very sharp.';
-  if (correctCount === 3) return 'Not bad.';
+function performanceMessage(correctCount: number, totalQuestions: number) {
+  const ratio = totalQuestions ? correctCount / totalQuestions : 0;
+  if (ratio === 1) return 'Politician master.';
+  if (ratio >= 0.8) return 'Very sharp.';
+  if (ratio >= 0.6) return 'Not bad.';
   if (correctCount === 2) return 'You can do better.';
   if (correctCount === 1) return 'We’ll keep that between us.';
   return 'The politicians won today.';
@@ -870,7 +900,7 @@ function rankForScore(score: number) {
   return 214;
 }
 
-function ResultsScreen({ name, score, correctCount, maxCombo, streak, records, source, shareText, copied, onCopy, onShare, onWhatsapp, onX, onChallenge, onPlayAgain, onHome }: { name: string; score: number; correctCount: number; maxCombo: number; streak: number; records: AnswerRecord[]; source: ContentSource; shareText: string; copied: boolean; onCopy: () => void; onShare: () => void; onWhatsapp: () => void; onX: () => void; onChallenge: () => void; onPlayAgain: () => void; onHome: () => void }) {
+function ResultsScreen({ name, score, correctCount, maxCombo, streak, records, mode, source, shareText, copied, onCopy, onShare, onWhatsapp, onX, onChallenge, onPlayAgain, onHome }: { name: string; score: number; correctCount: number; maxCombo: number; streak: number; records: AnswerRecord[]; mode: GameMode; source: ContentSource; shareText: string; copied: boolean; onCopy: () => void; onShare: () => void; onWhatsapp: () => void; onX: () => void; onChallenge: () => void; onPlayAgain: () => void; onHome: () => void }) {
   const rank = rankForScore(score);
   const totalTime = records.reduce((total, record) => total + record.time, 0);
   const ahead = Math.max(18, Math.min(96, 100 - Math.round(rank / 2.2)));
@@ -879,11 +909,11 @@ function ResultsScreen({ name, score, correctCount, maxCombo, streak, records, s
       <div className="mx-auto max-w-[920px]">
         <section className="relative overflow-hidden rounded-[28px] bg-[#183d41] px-6 py-10 text-[#f7f3e9] shadow-[5px_5px_0_#f6b94a] md:px-12 md:py-14">
           <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full border-[22px] border-[#ec6c5b]/30" /><div className="absolute bottom-5 right-20 h-5 w-5 rounded-full bg-[#f6b94a]" /><div className="absolute bottom-16 right-40 h-3 w-3 rounded-full bg-[#ec6c5b]" />
-          <div className="relative"><div className="flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.2em] text-[#f6b94a]"><Radio size={12} /> CHALLENGE COMPLETE · {source === 'live' ? 'LIVE ON X' : 'DEMO FALLBACK'}</div><h1 className="mt-4 text-5xl font-bold tracking-[-.08em] md:text-7xl">Nice work,<br /><span className="text-[#f6b94a]">{name}.</span></h1><p className="mt-5 max-w-[420px] text-sm leading-relaxed text-[#b9cfca]">{performanceMessage(correctCount)} You read the room, trusted your instincts, and kept the pressure on.</p><div className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5"><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">YOUR SCORE</div><div className="score-roll mt-1 text-6xl font-bold tracking-[-.08em] text-[#f7f3e9]">{score.toLocaleString()}</div></div><div className="mb-1 flex gap-8"><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">CORRECT</div><div className="mt-1 text-2xl font-bold">{correctCount}<span className="text-[#9ab8b0]">/5</span></div></div><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">BEST COMBO</div><div className="mt-1 text-2xl font-bold text-[#f6b94a]">x{maxCombo}</div></div></div></div></div>
+           <div className="relative"><div className="flex items-center gap-2 font-mono-custom text-[10px] uppercase tracking-[.2em] text-[#f6b94a]"><Radio size={12} /> CHALLENGE COMPLETE · {source === 'curated' ? 'CURATED X' : 'DEMO FALLBACK'} · {mode.label.toUpperCase()}</div><h1 className="mt-4 text-5xl font-bold tracking-[-.08em] md:text-7xl">Nice work,<br /><span className="text-[#f6b94a]">{name}.</span></h1><p className="mt-5 max-w-[420px] text-sm leading-relaxed text-[#b9cfca]">{performanceMessage(correctCount, mode.questionCount)} You read the room, trusted your instincts, and kept the pressure on.</p><div className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5"><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">YOUR SCORE</div><div className="score-roll mt-1 text-6xl font-bold tracking-[-.08em] text-[#f7f3e9]">{score.toLocaleString()}</div></div><div className="mb-1 flex gap-8"><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">CORRECT</div><div className="mt-1 text-2xl font-bold">{correctCount}<span className="text-[#9ab8b0]">/{mode.questionCount}</span></div></div><div><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#9ab8b0]">BEST COMBO</div><div className="mt-1 text-2xl font-bold text-[#f6b94a]">x{maxCombo}</div></div></div></div></div>
         </section>
         <section className="mt-5 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-[#d7d0be] bg-[#f7f3e9] p-4"><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#567276]">YOUR RANK</div><div className="mt-1 text-3xl font-bold tracking-[-.06em]">#{rank}</div><div className="mt-1 text-xs text-[#567276]">Ahead of {ahead}% of players</div></div>
-          <div className="rounded-2xl border border-[#d7d0be] bg-[#f7f3e9] p-4"><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#567276]">TIME PLAYED</div><div className="mt-1 text-3xl font-bold tracking-[-.06em]">{totalTime.toFixed(1)}s</div><div className="mt-1 text-xs text-[#567276]">Five quick-fire questions</div></div>
+           <div className="rounded-2xl border border-[#d7d0be] bg-[#f7f3e9] p-4"><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#567276]">TIME PLAYED</div><div className="mt-1 text-3xl font-bold tracking-[-.06em]">{totalTime.toFixed(1)}s</div><div className="mt-1 text-xs text-[#567276]">{mode.questionCount} {mode.label.toLowerCase()} questions</div></div>
           <div className="rounded-2xl border border-[#d7d0be] bg-[#f7f3e9] p-4"><div className="font-mono-custom text-[10px] uppercase tracking-[.16em] text-[#567276]">CURRENT STREAK</div><div className="mt-1 text-3xl font-bold tracking-[-.06em]">{streak} days</div><div className="mt-1 text-xs text-[#567276]">Come back tomorrow</div></div>
         </section>
         <div className="mt-5 rounded-xl border border-[#f6b94a]/40 bg-[#f6b94a]/15 px-4 py-3 text-sm font-bold text-[#183d41]">You&apos;re only {Math.max(80, score < 3500 ? 3500 - score : 120).toLocaleString()} points away from the next leaderboard jump.</div>
@@ -927,9 +957,9 @@ function LeaveConfirm({ onKeepPlaying, onLeave }: { onKeepPlaying: () => void; o
   </div>;
 }
 
-function ChallengeScreen({ name, source, shareText, onShare, onCopy, onWhatsapp, onX, copied, onPlay }: { name: string; source: ContentSource; shareText: string; onShare: () => void; onCopy: () => void; onWhatsapp: () => void; onX: () => void; copied: boolean; onPlay: () => void }) {
-  const live = source === 'live';
-  return <div className="screen"><div className="mx-auto max-w-[780px]"><div className="text-center"><div className="font-mono-custom text-[10px] uppercase tracking-[.2em] text-[#ec6c5b]">CHALLENGE A FRIEND</div><h1 className="mt-4 text-5xl font-bold tracking-[-.08em] md:text-7xl">Your move,<br /><span className="text-[#ec6c5b]">people.</span></h1><p className="mx-auto mt-5 max-w-[390px] text-sm leading-relaxed text-[#567276]">{name} has a {live ? 'live X post' : 'demo quote'} challenge for you. No spoilers. Just instincts.</p></div><div className="mx-auto mt-9 max-w-[560px] rotate-[-1deg] rounded-[24px] bg-[#183d41] p-7 text-[#f7f3e9] shadow-[6px_6px_0_#f6b94a] md:p-10"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><MessageCircle size={18} className="text-[#f6b94a]" /><span className="font-mono-custom text-[10px] uppercase tracking-[.18em]">WHO SAID IT? KE</span></div><span className="font-mono-custom text-[9px] text-[#ec6c5b]">{live ? 'LIVE ON X' : 'DEMO FALLBACK'}</span></div><div className="my-12 text-center"><div className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#9ab8b0]">A FRIEND LEFT YOU A CHALLENGE</div><div className="mt-5 text-3xl font-bold tracking-[-.06em] md:text-4xl">Can you clock<br />the voice?</div><div className="mt-5 text-sm text-[#b9cfca]">5 {live ? 'public X posts' : 'demo quotes'} · 10 seconds each</div></div><div className="flex items-center justify-between border-t border-[#f7f3e9]/15 pt-4"><span className="font-mono-custom text-[10px] text-[#9ab8b0]">#WHO SAID IT KE</span><span className="text-xs font-bold text-[#f6b94a]">Your turn next</span></div></div><div className="mt-9 flex flex-wrap justify-center gap-2"><button onClick={onShare} className="flex items-center gap-2 rounded-xl bg-[#ec6c5b] px-4 py-3 text-sm font-bold text-[#fff8e9] shadow-[3px_3px_0_#183d41]" data-testid="button-challenge-share"><Share2 size={16} /> Share challenge</button><button onClick={onCopy} className="flex items-center gap-2 rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-copy">{copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy text'}</button><button onClick={onWhatsapp} className="rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-whatsapp">WhatsApp</button><button onClick={onX} className="rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-x">X</button></div><p className="mx-auto mt-5 max-w-[480px] text-center text-[11px] leading-relaxed text-[#8a9792]" data-testid="text-challenge-copy">{shareText}</p><div className="mt-10 text-center"><button onClick={onPlay} className="inline-flex items-center gap-2 text-sm font-bold text-[#183d41] underline decoration-[#f6b94a] decoration-2 underline-offset-4" data-testid="button-challenge-play">Play your own round <ArrowRight size={15} /></button></div></div></div>;
+function ChallengeScreen({ name, mode, source, shareText, onShare, onCopy, onWhatsapp, onX, copied, onPlay }: { name: string; mode: GameMode; source: ContentSource; shareText: string; onShare: () => void; onCopy: () => void; onWhatsapp: () => void; onX: () => void; copied: boolean; onPlay: () => void }) {
+  const live = source === 'curated';
+  return <div className="screen"><div className="mx-auto max-w-[780px]"><div className="text-center"><div className="font-mono-custom text-[10px] uppercase tracking-[.2em] text-[#ec6c5b]">CHALLENGE A FRIEND</div><h1 className="mt-4 text-5xl font-bold tracking-[-.08em] md:text-7xl">Your move,<br /><span className="text-[#ec6c5b]">people.</span></h1><p className="mx-auto mt-5 max-w-[390px] text-sm leading-relaxed text-[#567276]">{name} has a {live ? 'curated X post' : 'demo quote'} challenge for you. No spoilers. Just instincts.</p></div><div className="mx-auto mt-9 max-w-[560px] rotate-[-1deg] rounded-[24px] bg-[#183d41] p-7 text-[#f7f3e9] shadow-[6px_6px_0_#f6b94a] md:p-10"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><MessageCircle size={18} className="text-[#f6b94a]" /><span className="font-mono-custom text-[10px] uppercase tracking-[.18em]">WHO SAID IT? KE</span></div><span className="font-mono-custom text-[9px] text-[#ec6c5b]">{live ? 'CURATED X' : 'DEMO FALLBACK'}</span></div><div className="my-12 text-center"><div className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#9ab8b0]">A FRIEND LEFT YOU A CHALLENGE</div><div className="mt-5 text-3xl font-bold tracking-[-.06em] md:text-4xl">Can you clock<br />the voice?</div><div className="mt-5 text-sm text-[#b9cfca]">{mode.questionCount} {live ? 'public X posts' : 'demo quotes'} · {formatModeDuration(mode.totalSeconds)}</div></div><div className="flex items-center justify-between border-t border-[#f7f3e9]/15 pt-4"><span className="font-mono-custom text-[10px] text-[#9ab8b0]">#WHO SAID IT KE</span><span className="text-xs font-bold text-[#f6b94a]">Your turn next</span></div></div><div className="mt-9 flex flex-wrap justify-center gap-2"><button onClick={onShare} className="flex items-center gap-2 rounded-xl bg-[#ec6c5b] px-4 py-3 text-sm font-bold text-[#fff8e9] shadow-[3px_3px_0_#183d41]" data-testid="button-challenge-share"><Share2 size={16} /> Share challenge</button><button onClick={onCopy} className="flex items-center gap-2 rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-copy">{copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy text'}</button><button onClick={onWhatsapp} className="rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-whatsapp">WhatsApp</button><button onClick={onX} className="rounded-xl border border-[#cfc3b0] bg-[#f7f3e9] px-4 py-3 text-sm font-bold" data-testid="button-challenge-x">X</button></div><p className="mx-auto mt-5 max-w-[480px] text-center text-[11px] leading-relaxed text-[#8a9792]" data-testid="text-challenge-copy">{shareText}</p><div className="mt-10 text-center"><button onClick={onPlay} className="inline-flex items-center gap-2 text-sm font-bold text-[#183d41] underline decoration-[#f6b94a] decoration-2 underline-offset-4" data-testid="button-challenge-play">Play your own round <ArrowRight size={15} /></button></div></div></div>;
 }
 
 function MobileNav({ view, onNavigate }: { view: View; onNavigate: (view: View) => void }) {
