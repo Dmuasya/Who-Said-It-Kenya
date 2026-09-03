@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { KENYA_X_POSTS } from './data/kenyaXPosts';
+import { buildRoundQuestions, buildShareText, formatModeDuration, GAME_MODES, getGameMode, getNextQuestionIndex, type GameMode, type GameModeId } from './gameModes';
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,30 +34,6 @@ type View = 'home' | 'play' | 'leaders' | 'profile' | 'share';
 type Phase = 'countdown' | 'question' | 'reveal' | 'finished';
 type ResultKind = 'correct' | 'wrong' | 'timeout';
 type ContentSource = 'curated' | 'demo';
-type GameModeId = 'quickfire' | 'classic' | 'marathon';
-type GameMode = {
-  id: GameModeId;
-  label: string;
-  questionCount: number;
-  totalSeconds: number;
-  secondsPerQuestion: number;
-  description: string;
-  signature?: boolean;
-};
-
-const GAME_MODES: GameMode[] = [
-  { id: 'quickfire', label: 'Quickfire', questionCount: 5, totalSeconds: 50, secondsPerQuestion: 10, description: 'The signature five-question group challenge.', signature: true },
-  { id: 'classic', label: 'Classic', questionCount: 10, totalSeconds: 90, secondsPerQuestion: 9, description: 'A longer round for sharper pattern-spotting.' },
-  { id: 'marathon', label: 'Marathon', questionCount: 25, totalSeconds: 180, secondsPerQuestion: 7.2, description: 'Twenty-five posts. Three minutes. Stay locked in.' },
-];
-
-function getGameMode(id: GameModeId) {
-  return GAME_MODES.find((mode) => mode.id === id) || GAME_MODES[0];
-}
-
-function formatModeDuration(totalSeconds: number) {
-  return totalSeconds >= 60 ? `${Math.floor(totalSeconds / 60)} min${totalSeconds % 60 ? ` ${totalSeconds % 60} sec` : ''}` : `${totalSeconds} seconds`;
-}
 
 type Question = {
   id: string;
@@ -445,17 +422,13 @@ function App() {
 
   const currentQuestion = gameQuestions[questionIndex] || questionPool[0] || QUESTIONS[0];
   const correctCount = answerRecords.filter((record) => record.correct).length;
-  const shareGrid = answerRecords.map((record) => (record.correct ? '🟩' : '🟥')).join('');
   const activeMode = getGameMode(roundMode);
-  const gameShareText = `I scored ${score.toLocaleString()} points on Who Said It? Kenya — ${activeMode.label} mode.\n${shareGrid || '⬜'.repeat(activeMode.questionCount)} ${correctCount}/${activeMode.questionCount}\nCan you beat my score? #WhoSaidItKE`;
+  const gameShareText = buildShareText(score, activeMode, answerRecords);
 
   const startGame = useCallback(() => {
     const mode = getGameMode(selectedMode);
     const sourceQuestions = questionPool.length >= 5 ? questionPool : getDailyChallenge();
-    const questions = Array.from({ length: mode.questionCount }, (_, index) => {
-      const question = sourceQuestions[index % sourceQuestions.length];
-      return { ...question, id: `${question.id}-${mode.id}-${index}`, tag: index === mode.questionCount - 1 ? `FINAL BOSS · ${mode.label.toUpperCase()}` : question.tag, options: shuffle(question.options) };
-    });
+    const questions = buildRoundQuestions(sourceQuestions, mode, shuffle);
     setGameQuestions(questions);
     setRoundMode(selectedMode);
     setRoundSource(contentSource);
@@ -533,7 +506,8 @@ function App() {
   useEffect(() => {
     if (phase !== 'reveal') return;
     const revealTimer = window.setTimeout(() => {
-      if (questionIndex >= gameQuestions.length - 1) {
+      const nextQuestionIndex = getNextQuestionIndex(questionIndex, gameQuestions.length);
+      if (nextQuestionIndex === null) {
         const finalScore = score;
         setBestScore((oldBest) => {
           const nextBest = Math.max(oldBest, finalScore);
@@ -563,7 +537,7 @@ function App() {
         playTone('win', soundOn);
         setPhase('finished');
       } else {
-        setQuestionIndex((current) => current + 1);
+        setQuestionIndex(nextQuestionIndex);
         setPhase('countdown');
         setCountdown(2);
         setTimeLeft(getGameMode(roundMode).secondsPerQuestion);
