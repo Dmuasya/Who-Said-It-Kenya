@@ -816,6 +816,7 @@ function GameScreen({ phase, countdown, question, questionIndex, timeLeft, selec
   const timerPercent = Math.max(0, (timeLeft / mode.secondsPerQuestion) * 100);
   return (
     <div className={`min-h-[calc(100dvh-0px)] bg-[#183d41] px-4 pb-10 pt-5 text-[#f7f3e9] md:px-8 md:pt-8 ${feedback === 'wrong' || feedback === 'timeout' ? 'answer-shake' : ''}`}>
+      <TimerFab timeLeft={timeLeft} timerPercent={timerPercent} />
       <div className="mx-auto max-w-[850px]">
         <div className="flex items-center justify-between">
           <button onClick={onQuit} className="flex items-center gap-2 text-xs font-bold text-[#9ab8b0] transition-colors hover:text-[#f7f3e9]" data-testid="button-quit-game"><ArrowLeft size={16} /> Exit</button>
@@ -825,9 +826,9 @@ function GameScreen({ phase, countdown, question, questionIndex, timeLeft, selec
         <div className="mt-7 flex items-center gap-2" aria-label={`Question ${questionIndex + 1} of ${mode.questionCount}`}>
           {Array.from({ length: mode.questionCount }, (_, index) => <div key={index} className={`h-1.5 flex-1 rounded-full ${index < questionIndex ? 'bg-[#f6b94a]' : index === questionIndex ? 'bg-[#ec6c5b]' : 'bg-[#f7f3e9]/20'}`} />)}
         </div>
-        <div className="mt-7 flex items-center justify-between"><div><span className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#f6b94a]">{question.tag}</span><p className="mt-1 text-xs text-[#9ab8b0]">Question {String(questionIndex + 1).padStart(2, '0')} <span className="text-[#567276]">of {String(mode.questionCount).padStart(2, '0')}</span></p></div><div className={`relative flex h-[70px] w-[70px] items-center justify-center rounded-full border-[5px] ${timeLeft <= 3 ? 'timer-pulse border-[#ec6c5b] text-[#ff9483]' : 'border-[#f6b94a] text-[#f6b94a]'}`}><span className="font-mono-custom text-xl font-medium">{Math.ceil(timeLeft)}</span><span className="absolute -bottom-5 font-mono-custom text-[8px] uppercase tracking-[.16em] text-[#9ab8b0]">seconds</span></div></div>
+        <div className="mt-7 flex items-center justify-between"><div><span className="font-mono-custom text-[10px] uppercase tracking-[.18em] text-[#f6b94a]">{question.tag}</span><p className="mt-1 text-xs text-[#9ab8b0]">Question {String(questionIndex + 1).padStart(2, '0')} <span className="text-[#567276]">of {String(mode.questionCount).padStart(2, '0')}</span></p></div><span className="font-mono-custom text-[9px] uppercase tracking-[.16em] text-[#9ab8b0]">Timer floats above the round</span></div>
           <div className="mt-10 rounded-[25px] border border-[#f7f3e9]/15 bg-[#214c50] px-5 py-9 shadow-[5px_5px_0_rgba(0,0,0,.12)] md:px-12 md:py-12">
-           <div className="flex items-center gap-2 text-[#ec6c5b]"><span className="h-2 w-2 rounded-full bg-[#ec6c5b]" /><span className="font-mono-custom text-[10px] font-medium uppercase tracking-[.18em]">{live ? 'A LIVE X POST' : 'A DEMO QUOTE'}</span></div>
+            <div className="flex items-center gap-2 text-[#ec6c5b]"><span className="h-2 w-2 rounded-full bg-[#ec6c5b]" /><span className="font-mono-custom text-[10px] font-medium uppercase tracking-[.18em]">{live ? 'A CURATED X POST' : 'A DEMO QUOTE'}</span></div>
           <blockquote className="mt-6 max-w-[700px] text-[clamp(1.8rem,4vw,3.35rem)] font-bold leading-[1.06] tracking-[-.065em] text-[#f7f3e9]">{question.quote}</blockquote>
            <div className="mt-6 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-[#9ab8b0]"><span>{question.context}</span><span className="text-[#567276]">•</span>{live && question.sourceUrl ? <a href={question.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-[#f6b94a] underline underline-offset-2">Open original post <ExternalLink size={12} /></a> : <span>No real person is being quoted.</span>}</div>
         </div>
@@ -843,8 +844,27 @@ function GameScreen({ phase, countdown, question, questionIndex, timeLeft, selec
             return <button key={option} disabled={Boolean(feedback) || isEliminated} onClick={() => onAnswer(index)} className={`flex min-h-[66px] items-center gap-4 rounded-xl border px-4 text-left transition-all ${stateClass} ${!feedback && !isEliminated ? 'press' : ''}`} data-testid={`button-answer-${index + 1}`} aria-label={`Option ${index + 1}: ${option}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-mono-custom text-sm ${feedback && isCorrect ? 'bg-[#72d0a1] text-[#183d41]' : feedback && isChosen ? 'bg-[#ec6c5b] text-[#f7f3e9]' : 'bg-[#f7f3e9]/10 text-[#f6b94a]'}`}>{index + 1}</span><span className="text-sm font-bold md:text-base">{option}</span>{feedback && isCorrect && <Check size={18} className="ml-auto text-[#a4f0c8]" />}{feedback && isChosen && !isCorrect && <X size={18} className="ml-auto text-[#ffb3a5]" />}</button>;
           })}
         </div>
-        <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><button onClick={onHint} disabled={hintUsed || Boolean(feedback)} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold transition-colors ${hintUsed ? 'border-[#f7f3e9]/10 text-[#567276]' : 'border-[#f6b94a]/60 text-[#f6b94a] hover:bg-[#f6b94a]/10'}`} data-testid="button-use-hint"><Lightbulb size={15} /> {hintUsed ? 'Hint used' : 'Use one hint'} <span className="font-mono-custom text-[9px] opacity-70">[H]</span></button><div className="flex items-center gap-5 text-xs"><span className="text-[#9ab8b0]">Combo <strong className="ml-1 text-[#f6b94a]">x{combo}</strong></span><div className="w-28"><div className="h-1 rounded-full bg-[#f7f3e9]/15"><div className="h-1 rounded-full bg-[#ec6c5b] transition-all" style={{ width: `${timerPercent}%` }} /></div></div></div></div>
+        <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><button onClick={onHint} disabled={hintUsed || Boolean(feedback)} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold transition-colors ${hintUsed ? 'border-[#f7f3e9]/10 text-[#567276]' : 'border-[#f6b94a]/60 text-[#f6b94a] hover:bg-[#f6b94a]/10'}`} data-testid="button-use-hint"><Lightbulb size={15} /> {hintUsed ? 'Hint used' : 'Use one hint'} <span className="font-mono-custom text-[9px] opacity-70">[H]</span></button><div className="flex items-center gap-5 text-xs"><span className="text-[#9ab8b0]">Combo <strong className="ml-1 text-[#f6b94a]">x{combo}</strong></span><span className="font-mono-custom text-[9px] uppercase tracking-[.12em] text-[#567276]">Beat the clock</span></div></div>
         <div className="mt-8 min-h-7 text-center" aria-live="polite">{feedback && <Feedback kind={feedback} points={lastPoints} answer={question.answer} combo={combo} />}</div>
+      </div>
+    </div>
+  );
+}
+
+function TimerFab({ timeLeft, timerPercent }: { timeLeft: number; timerPercent: number }) {
+  const urgent = timeLeft <= 3;
+  return (
+    <div
+      className={`timer-fab fixed bottom-24 right-4 z-40 flex h-[78px] w-[78px] items-center justify-center rounded-full p-[5px] shadow-[4px_4px_0_rgba(0,0,0,.22)] md:bottom-8 md:right-8 ${urgent ? 'timer-pulse bg-[#ec6c5b]' : 'bg-[#f6b94a]'}`}
+      style={urgent ? undefined : { background: `conic-gradient(#f6b94a ${timerPercent}%, #ec6c5b ${timerPercent}% 100%)` }}
+      role="status"
+      aria-live="polite"
+      aria-label={`${Math.ceil(timeLeft)} seconds remaining`}
+      data-testid="floating-timer"
+    >
+      <div className={`flex h-full w-full flex-col items-center justify-center rounded-full border-2 ${urgent ? 'border-[#754a49] bg-[#ec6c5b] text-[#fff8e9]' : 'border-[#183d41] bg-[#183d41] text-[#f7f3e9]'}`}>
+        <span className="font-mono-custom text-xl font-medium leading-none">{Math.ceil(timeLeft)}</span>
+        <span className="mt-1 font-mono-custom text-[8px] uppercase tracking-[.16em] opacity-75">seconds</span>
       </div>
     </div>
   );
