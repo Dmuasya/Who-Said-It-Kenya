@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { KENYA_X_POSTS } from './data/kenyaXPosts';
-import { buildRoundQuestions, buildShareText, formatModeDuration, GAME_MODES, getGameMode, getNextQuestionIndex, type GameMode, type GameModeId } from './gameModes';
+import { buildRoundQuestions, buildShareText, claimQuestionAnswer, createTimeoutAnswerRecord, formatModeDuration, GAME_MODES, getGameMode, getNextQuestionIndex, type GameMode, type GameModeId } from './gameModes';
 import {
   ArrowLeft,
   ArrowRight,
@@ -399,6 +399,8 @@ function App() {
   const [saveError, setSaveError] = useState('');
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const tickRef = useRef<number | null>(null);
+  const roundIdRef = useRef(0);
+  const activeQuestionRef = useRef({ roundId: 0, questionIndex: 0, answered: false, phase: 'countdown' });
 
   const syncView = useCallback((next: View) => {
     setView(next);
@@ -424,11 +426,14 @@ function App() {
   const correctCount = answerRecords.filter((record) => record.correct).length;
   const activeMode = getGameMode(roundMode);
   const gameShareText = buildShareText(score, activeMode, answerRecords);
+  const currentRoundId = roundIdRef.current;
 
   const startGame = useCallback(() => {
     const mode = getGameMode(selectedMode);
     const sourceQuestions = questionPool.length >= 5 ? questionPool : getDailyChallenge();
     const questions = buildRoundQuestions(sourceQuestions, mode, shuffle);
+    roundIdRef.current += 1;
+    activeQuestionRef.current = { roundId: roundIdRef.current, questionIndex: 0, answered: false, phase: 'countdown' };
     setGameQuestions(questions);
     setRoundMode(selectedMode);
     setRoundSource(contentSource);
@@ -450,10 +455,17 @@ function App() {
 
   useEffect(() => {
     if (view !== 'play' || phase !== 'countdown') return;
+    const countdownRoundId = currentRoundId;
     const countdownTimer = window.setInterval(() => {
+      if (roundIdRef.current !== countdownRoundId) {
+        window.clearInterval(countdownTimer);
+        return;
+      }
       setCountdown((current) => {
+        if (roundIdRef.current !== countdownRoundId) return current;
         if (current <= 1) {
           window.clearInterval(countdownTimer);
+          activeQuestionRef.current = { roundId: activeQuestionRef.current.roundId, questionIndex, answered: false, phase: 'question' };
           setPhase('question');
           setSelected(null);
           setFeedback(null);
@@ -465,12 +477,17 @@ function App() {
       });
     }, 850);
     return () => window.clearInterval(countdownTimer);
-  }, [view, phase, soundOn]);
+  }, [currentRoundId, view, phase, soundOn]);
 
   useEffect(() => {
     if (view !== 'play' || phase !== 'question') return;
+    const timerRoundId = currentRoundId;
     const mode = getGameMode(roundMode);
     const timer = window.setInterval(() => {
+      if (roundIdRef.current !== timerRoundId) {
+        window.clearInterval(timer);
+        return;
+      }
       const elapsed = (Date.now() - startedAt) / 1000;
       const remaining = Math.max(0, mode.secondsPerQuestion - elapsed);
       setTimeLeft(remaining);
@@ -481,11 +498,13 @@ function App() {
     }, 100);
     tickRef.current = timer;
     return () => window.clearInterval(timer);
-  }, [roundMode, view, phase, startedAt]);
+  }, [currentRoundId, roundMode, view, phase, startedAt]);
 
   const answerQuestion = useCallback((optionIndex: number | null) => {
-    if (phase !== 'question') return;
+    const activeQuestion = activeQuestionRef.current;
+    if (activeQuestion.roundId !== currentRoundId || !claimQuestionAnswer(activeQuestion, questionIndex)) return;
     if (tickRef.current) window.clearInterval(tickRef.current);
+    tickRef.current = null;
     const elapsed = Math.min(getGameMode(roundMode).secondsPerQuestion, Math.max(0, (Date.now() - startedAt) / 1000));
     const correct = optionIndex !== null && currentQuestion.options[optionIndex] === currentQuestion.answer;
     const kind: ResultKind = optionIndex === null ? 'timeout' : correct ? 'correct' : 'wrong';
@@ -498,14 +517,20 @@ function App() {
     setScore((current) => current + points);
     setCombo(nextCombo);
     setMaxCombo((current) => Math.max(current, nextCombo));
-    setAnswerRecords((records) => [...records, { selected: optionIndex, correct, points, time: elapsed, kind }]);
+    const answerRecord = optionIndex === null
+      ? createTimeoutAnswerRecord(elapsed)
+      : { selected: optionIndex, correct, points, time: elapsed, kind };
+    setAnswerRecords((records) => [...records, answerRecord]);
     playTone(kind === 'correct' ? 'correct' : 'wrong', soundOn);
+    activeQuestion.phase = 'reveal';
     setPhase('reveal');
-  }, [combo, currentQuestion, hintForQuestion, phase, questionIndex, roundMode, soundOn, startedAt]);
+  }, [combo, currentQuestion, currentRoundId, hintForQuestion, questionIndex, roundMode, soundOn, startedAt]);
 
   useEffect(() => {
     if (phase !== 'reveal') return;
+    const revealRoundId = currentRoundId;
     const revealTimer = window.setTimeout(() => {
+      if (roundIdRef.current !== revealRoundId) return;
       const nextQuestionIndex = getNextQuestionIndex(questionIndex, gameQuestions.length);
       if (nextQuestionIndex === null) {
         const finalScore = score;
@@ -535,8 +560,10 @@ function App() {
           localStorage.setItem(STORAGE.lastPlayed, today);
         }
         playTone('win', soundOn);
+        activeQuestionRef.current.phase = 'finished';
         setPhase('finished');
       } else {
+        activeQuestionRef.current = { roundId: activeQuestionRef.current.roundId, questionIndex: nextQuestionIndex, answered: false, phase: 'countdown' };
         setQuestionIndex(nextQuestionIndex);
         setPhase('countdown');
         setCountdown(2);
@@ -544,7 +571,7 @@ function App() {
       }
     }, 1250);
     return () => window.clearTimeout(revealTimer);
-  }, [gameQuestions.length, phase, questionIndex, roundMode, score, soundOn, streak]);
+  }, [currentRoundId, gameQuestions.length, phase, questionIndex, roundMode, score, soundOn, streak]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

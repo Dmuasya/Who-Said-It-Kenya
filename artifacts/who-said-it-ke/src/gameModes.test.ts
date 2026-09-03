@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildRoundQuestions, buildShareText, GAME_MODES, getNextQuestionIndex } from './gameModes';
+import { buildRoundQuestions, buildShareText, claimQuestionAnswer, createTimeoutAnswerRecord, GAME_MODES, getNextQuestionIndex } from './gameModes';
 
 const expectedModes = [
   { id: 'quickfire', label: 'Quickfire', questionCount: 5, totalSeconds: 50, secondsPerQuestion: 10 },
@@ -51,5 +51,47 @@ test('share copy includes the active mode and its complete question total', () =
     assert.match(shareText, new RegExp(`— ${mode.label} mode\\.`));
     assert.match(shareText, new RegExp(`\\d+/${mode.questionCount}\\n`));
     assert.equal((shareText.match(/[🟩🟥]/gu) || []).length, mode.questionCount);
+  }
+});
+
+test('a fully timed-out round records one timeout and advances exactly once per question', () => {
+  for (const mode of GAME_MODES) {
+    const timeoutRecords = [];
+    const visitedQuestionIndexes: number[] = [];
+    let questionIndex = 0;
+
+    while (true) {
+      visitedQuestionIndexes.push(questionIndex);
+      timeoutRecords.push(createTimeoutAnswerRecord(mode.secondsPerQuestion));
+
+      const nextQuestionIndex = getNextQuestionIndex(questionIndex, mode.questionCount);
+      if (nextQuestionIndex === null) break;
+      questionIndex = nextQuestionIndex;
+    }
+
+    assert.equal(timeoutRecords.length, mode.questionCount);
+    assert.equal(new Set(visitedQuestionIndexes).size, mode.questionCount);
+    assert.deepEqual(visitedQuestionIndexes, Array.from({ length: mode.questionCount }, (_, index) => index));
+    assert.deepEqual(timeoutRecords, Array.from({ length: mode.questionCount }, () => ({
+      selected: null,
+      correct: false,
+      points: 0,
+      time: mode.secondsPerQuestion,
+      kind: 'timeout',
+    })));
+    const shareText = buildShareText(0, mode, timeoutRecords);
+    assert.match(shareText, new RegExp(`— ${mode.label} mode\\.`));
+    assert.match(shareText, new RegExp(`0/${mode.questionCount}\\n`));
+    assert.equal((shareText.match(/🟥/gu) || []).length, mode.questionCount);
+  }
+});
+
+test('a question can only be claimed once while its question identity is active', () => {
+  for (const mode of GAME_MODES) {
+    const state = { phase: 'question', questionIndex: mode.questionCount - 1, answered: false };
+
+    assert.equal(claimQuestionAnswer(state, state.questionIndex), true);
+    assert.equal(claimQuestionAnswer(state, state.questionIndex), false);
+    assert.equal(claimQuestionAnswer(state, state.questionIndex + 1), false);
   }
 });

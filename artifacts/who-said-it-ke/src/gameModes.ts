@@ -34,6 +34,30 @@ export type RoundQuestion = {
   options: string[];
 };
 
+export type TimeoutAnswerRecord = {
+  selected: null;
+  correct: false;
+  points: 0;
+  time: number;
+  kind: 'timeout';
+};
+
+export function createTimeoutAnswerRecord(time: number): TimeoutAnswerRecord {
+  return {
+    selected: null,
+    correct: false,
+    points: 0,
+    time,
+    kind: 'timeout',
+  };
+}
+
+export function claimQuestionAnswer(state: { phase: string; questionIndex: number; answered: boolean }, questionIndex: number) {
+  if (state.phase !== 'question' || state.answered || state.questionIndex !== questionIndex) return false;
+  state.answered = true;
+  return true;
+}
+
 export function buildRoundQuestions<T extends RoundQuestion>(sourceQuestions: T[], mode: GameMode, shuffleOptions: <Option>(items: Option[]) => Option[]) {
   return Array.from({ length: mode.questionCount }, (_, index) => {
     const question = sourceQuestions[index % sourceQuestions.length];
